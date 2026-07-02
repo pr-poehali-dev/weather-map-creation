@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import EurasiaMap, { HazardLevel, HAZARD_META, CITIES } from '@/components/EurasiaMap';
+import EurasiaMap, { HazardLevel, HAZARD_META, HazardZone } from '@/components/EurasiaMap';
 import Icon from '@/components/ui/icon';
 
 const LEVELS: HazardLevel[] = [1, 2, 3, 4];
@@ -13,13 +13,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
-
-const TEAM = [
-  { call: 'STORM-01', name: 'А. Волков', role: 'Ведущий синоптик', region: 'Вост. Европа' },
-  { call: 'CIRRUS-04', name: 'М. Лаутнер', role: 'Аналитик мезомасштаба', region: 'Центр. Азия' },
-  { call: 'DELTA-09', name: 'К. Соколова', role: 'Спотер / полевой', region: 'Юж. Сибирь' },
-  { call: 'NIMBUS-02', name: 'Т. Ямада', role: 'Оператор радара', region: 'Дальний Восток' },
-];
 
 const ARCHIVE = [
   { date: '2026-06-28', city: 'Москва', lvl: 3 as HazardLevel, event: 'Суперячейка, град 4см', obs: 'STORM-01' },
@@ -36,41 +29,59 @@ const CRITERIA = [
   { lvl: 4 as HazardLevel, cape: '> 3000 J/kg', wind: '> 30 м/с', prob: '> 70%' },
 ];
 
+const INITIAL_ZONES: HazardZone[] = [
+  { id: 'z1', level: 3, points: [{ x: 470, y: 320 }, { x: 600, y: 305 }, { x: 640, y: 400 }, { x: 520, y: 430 }, { x: 445, y: 380 }] },
+  { id: 'z2', level: 4, points: [{ x: 780, y: 300 }, { x: 900, y: 300 }, { x: 910, y: 400 }, { x: 790, y: 405 }] },
+  { id: 'z3', level: 2, points: [{ x: 380, y: 500 }, { x: 490, y: 500 }, { x: 480, y: 580 }, { x: 390, y: 580 }] },
+];
+
 export default function Index() {
   const [tab, setTab] = useState<TabId>('map');
-  const [zones, setZones] = useState<Record<string, HazardLevel>>({ msk: 3, nsk: 4, ist: 2, del: 1, pek: 2 });
+  const [zones, setZones] = useState<HazardZone[]>(INITIAL_ZONES);
+  const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [level, setLevel] = useState<HazardLevel>(3);
 
-  const handleCity = (id: string) => {
-    setZones((prev) => {
-      const next = { ...prev };
-      if (level === 0) delete next[id];
-      else if (prev[id] === level) delete next[id];
-      else next[id] = level;
-      return next;
-    });
+  const startDrawing = (l: HazardLevel) => {
+    setLevel(l);
+    setDraft([]);
   };
+
+  const handleMapClick = (p: { x: number; y: number }) => {
+    if (level === 0) return;
+    setDraft((prev) => [...prev, p]);
+  };
+
+  const finishZone = () => {
+    if (draft.length < 3 || level === 0) return;
+    setZones((prev) => [...prev, { id: `z${Date.now()}`, level: level as Exclude<HazardLevel, 0>, points: draft }]);
+    setDraft([]);
+    setLevel(0);
+  };
+
+  const undoPoint = () => setDraft((prev) => prev.slice(0, -1));
+  const cancelDraft = () => { setDraft([]); setLevel(0); };
+  const removeLastZone = () => setZones((prev) => prev.slice(0, -1));
 
   const stats = useMemo(() => {
     const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
-    Object.values(zones).forEach((l) => (counts[l] = (counts[l] || 0) + 1));
+    zones.forEach((z) => (counts[z.level] = (counts[z.level] || 0) + 1));
     return counts;
   }, [zones]);
 
-  const total = Object.keys(zones).length;
+  const total = zones.length;
 
   return (
     <div className="min-h-screen bg-background text-foreground scanline">
       {/* HEADER */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-[1900px] items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-sm border border-hazard-1/60">
               <div className="animate-radar absolute inset-0 origin-center" style={{ background: 'conic-gradient(from 0deg, transparent 0deg, hsl(158 64% 45% / 0.5) 40deg, transparent 60deg)' }} />
               <Icon name="Radar" size={18} className="relative text-hazard-1" />
             </div>
             <div className="leading-none">
-              <div className="font-display text-lg font-semibold tracking-widest">METEO·WATCH</div>
+              <div className="font-display text-lg font-semibold tracking-widest">S.S.M.P team</div>
               <div className="text-[10px] tracking-[0.3em] text-muted-foreground">EURASIA HAZARD RADAR</div>
             </div>
           </div>
@@ -82,7 +93,7 @@ export default function Index() {
           </div>
         </div>
         {/* TABS */}
-        <nav className="mx-auto flex max-w-[1500px] gap-1 overflow-x-auto px-3 pb-2">
+        <nav className="mx-auto flex max-w-[1900px] gap-1 overflow-x-auto px-3 pb-2">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -100,20 +111,28 @@ export default function Index() {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-[1500px] px-4 py-5">
-        {tab === 'map' && (
-          <section className="grid gap-4 lg:grid-cols-[1fr_280px]">
-            {/* MAP */}
+      {tab === 'map' ? (
+        <main className="mx-auto max-w-[1900px] px-3 py-3">
+          <section className="grid gap-3 xl:grid-cols-[1fr_300px]">
+            {/* MAP — большая, на всю высоту экрана */}
             <div className="animate-fade-in relative overflow-hidden rounded-sm border border-border bg-[hsl(0_0%_5%)]">
               <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
-                <span>КАРТА · {total} АКТИВНЫХ ЗОН</span>
+                <span>КАРТА ЕВРАЗИИ · {total} АКТИВНЫХ ЗОН</span>
                 <span className="text-hazard-1">◉ TRACKING</span>
               </div>
-              <div className="relative aspect-[820/560] w-full">
-                <EurasiaMap zones={zones} onCityClick={handleCity} activeLevel={level} />
+              <div className="relative h-[calc(100vh-190px)] min-h-[520px] w-full">
+                <EurasiaMap zones={zones} draftPoints={draft} activeLevel={level} onMapClick={handleMapClick} />
+
+                {/* Подсказка при рисовании */}
+                {level !== 0 && (
+                  <div className="animate-fade-in absolute left-3 top-3 rounded-sm border border-hazard-1/50 bg-background/90 px-3 py-2 text-[11px] backdrop-blur">
+                    <div className="flex items-center gap-1.5 text-hazard-1"><Icon name="PenTool" size={12} /> РИСОВАНИЕ · L{level}</div>
+                    <div className="mt-1 text-muted-foreground">Кликай по карте, чтобы ставить углы зоны. Точек: {draft.length}</div>
+                  </div>
+                )}
 
                 {/* LEGEND — правый нижний угол */}
-                <div className="absolute bottom-3 right-3 w-[188px] rounded-sm border border-border bg-background/90 p-3 backdrop-blur">
+                <div className="absolute bottom-3 right-3 w-[200px] rounded-sm border border-border bg-background/90 p-3 backdrop-blur">
                   <div className="mb-2 flex items-center gap-1.5 text-[10px] tracking-widest text-muted-foreground">
                     <Icon name="ListTree" size={12} /> ЛЕГЕНДА · HAZARD
                   </div>
@@ -139,16 +158,16 @@ export default function Index() {
             <aside className="animate-fade-in space-y-3" style={{ animationDelay: '0.1s' }}>
               <div className="rounded-sm border border-border bg-card p-3">
                 <div className="mb-2 flex items-center gap-1.5 text-[11px] tracking-widest text-muted-foreground">
-                  <Icon name="Crosshair" size={13} /> УРОВЕНЬ ЗОНЫ
+                  <Icon name="PenTool" size={13} /> НАРИСОВАТЬ ЗОНУ
                 </div>
                 <p className="mb-3 text-[10px] leading-relaxed text-muted-foreground">
-                  Выбери уровень и кликай по городам на радаре, чтобы разметить опасные зоны.
+                  Выбери уровень угрозы, затем кликами по карте обведи область — она заполнится цветом.
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {LEVELS.map((l) => (
                     <button
                       key={l}
-                      onClick={() => setLevel(l)}
+                      onClick={() => startDrawing(l)}
                       className={`flex flex-col items-start gap-0.5 border p-2 text-left transition-all ${
                         level === l ? 'scale-[1.02]' : 'opacity-70 hover:opacity-100'
                       }`}
@@ -159,20 +178,35 @@ export default function Index() {
                     </button>
                   ))}
                 </div>
-                <button
-                  onClick={() => setLevel(0)}
-                  className={`mt-2 flex w-full items-center justify-center gap-1.5 border py-1.5 text-[10px] tracking-wider transition-colors ${
-                    level === 0 ? 'border-foreground/50 bg-secondary text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon name="Eraser" size={12} /> РЕЖИМ УДАЛЕНИЯ
-                </button>
+
+                {level !== 0 && (
+                  <div className="animate-fade-in mt-2 space-y-1.5">
+                    <button
+                      onClick={finishZone}
+                      disabled={draft.length < 3}
+                      className="flex w-full items-center justify-center gap-1.5 border border-hazard-1/60 bg-hazard-1/10 py-1.5 text-[10px] tracking-wider text-hazard-1 transition-colors hover:bg-hazard-1/20 disabled:opacity-40"
+                    >
+                      <Icon name="Check" size={12} /> ЗАВЕРШИТЬ ЗОНУ
+                    </button>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button onClick={undoPoint} disabled={!draft.length} className="flex items-center justify-center gap-1 border border-border py-1.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+                        <Icon name="Undo2" size={11} /> ТОЧКА
+                      </button>
+                      <button onClick={cancelDraft} className="flex items-center justify-center gap-1 border border-border py-1.5 text-[10px] text-muted-foreground transition-colors hover:text-hazard-4">
+                        <Icon name="X" size={11} /> ОТМЕНА
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-sm border border-border bg-card p-3">
                 <div className="mb-2 flex items-center justify-between text-[11px] tracking-widest text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Icon name="Activity" size={13} /> СВОДКА</span>
-                  <button onClick={() => setZones({})} className="text-[10px] text-muted-foreground hover:text-hazard-4">СБРОС</button>
+                  <div className="flex gap-2">
+                    <button onClick={removeLastZone} disabled={!total} className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40">← ЗОНА</button>
+                    <button onClick={() => setZones([])} className="text-[10px] text-muted-foreground hover:text-hazard-4">СБРОС</button>
+                  </div>
                 </div>
                 {LEVELS.map((l) => (
                   <div key={l} className="mb-1.5">
@@ -187,114 +221,109 @@ export default function Index() {
                 ))}
                 <div className="mt-3 border-t border-border pt-2 text-center">
                   <div className="font-display text-3xl font-semibold text-foreground">{total}</div>
-                  <div className="text-[9px] tracking-widest text-muted-foreground">ЗОН НА КАРТЕ · {CITIES.length} ПУНКТОВ</div>
+                  <div className="text-[9px] tracking-widest text-muted-foreground">ЗОН УГРОЗЫ НА КАРТЕ</div>
                 </div>
               </div>
             </aside>
           </section>
-        )}
-
-        {tab === 'method' && (
-          <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
-            <SectionTitle icon="FlaskConical" title="Методология и критерии" sub="Классификация уровней опасности" />
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Оценка риска строится на композитном индексе конвективной неустойчивости (CAPE), сдвига ветра, вероятности осадков
-              и данных наземных спотеров. Каждой зоне присваивается один из четырёх уровней — от L1 до L4.
-            </p>
-            <div className="overflow-x-auto rounded-sm border border-border">
-              <table className="w-full text-left text-[12px]">
-                <thead className="bg-secondary text-[10px] tracking-widest text-muted-foreground">
-                  <tr>
-                    <th className="p-2.5">УРОВЕНЬ</th><th className="p-2.5">CAPE</th><th className="p-2.5">ВЕТЕР</th><th className="p-2.5">ВЕРОЯТНОСТЬ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {CRITERIA.map((c) => (
-                    <tr key={c.lvl} className="border-t border-border">
-                      <td className="p-2.5"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[1px]" style={{ background: HAZARD_META[c.lvl].color }} /><span style={{ color: HAZARD_META[c.lvl].color }}>L{c.lvl} {HAZARD_META[c.lvl].label}</span></span></td>
-                      <td className="p-2.5 text-muted-foreground">{c.cape}</td>
-                      <td className="p-2.5 text-muted-foreground">{c.wind}</td>
-                      <td className="p-2.5 text-muted-foreground">{c.prob}</td>
+        </main>
+      ) : (
+        <main className="mx-auto max-w-[1500px] px-4 py-6">
+          {tab === 'method' && (
+            <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
+              <SectionTitle icon="FlaskConical" title="Методология и критерии" sub="Классификация уровней опасности" />
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Оценка риска строится на композитном индексе конвективной неустойчивости (CAPE), сдвига ветра, вероятности осадков
+                и данных наземных спотеров. Каждой зоне присваивается один из четырёх уровней — от L1 до L4.
+              </p>
+              <div className="overflow-x-auto rounded-sm border border-border">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-secondary text-[10px] tracking-widest text-muted-foreground">
+                    <tr>
+                      <th className="p-2.5">УРОВЕНЬ</th><th className="p-2.5">CAPE</th><th className="p-2.5">ВЕТЕР</th><th className="p-2.5">ВЕРОЯТНОСТЬ</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+                  </thead>
+                  <tbody>
+                    {CRITERIA.map((c) => (
+                      <tr key={c.lvl} className="border-t border-border">
+                        <td className="p-2.5"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-[1px]" style={{ background: HAZARD_META[c.lvl].color }} /><span style={{ color: HAZARD_META[c.lvl].color }}>L{c.lvl} {HAZARD_META[c.lvl].label}</span></span></td>
+                        <td className="p-2.5 text-muted-foreground">{c.cape}</td>
+                        <td className="p-2.5 text-muted-foreground">{c.wind}</td>
+                        <td className="p-2.5 text-muted-foreground">{c.prob}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
-        {tab === 'team' && (
-          <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
-            <SectionTitle icon="Users" title="Команда наблюдателей" sub="Метеорологи-любители METEO·WATCH" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              {TEAM.map((m) => (
-                <div key={m.call} className="rounded-sm border border-border bg-card p-4 transition-colors hover:border-hazard-1/50">
-                  <div className="flex items-center justify-between">
-                    <span className="font-display text-base tracking-widest text-hazard-1">{m.call}</span>
-                    <Icon name="RadioTower" size={16} className="text-muted-foreground" />
+          {tab === 'team' && (
+            <section className="animate-fade-in mx-auto flex min-h-[50vh] max-w-3xl flex-col items-center justify-center text-center">
+              <div className="relative mb-6 flex h-20 w-20 items-center justify-center overflow-hidden rounded-sm border border-hazard-1/50">
+                <div className="animate-radar absolute inset-0 origin-center" style={{ background: 'conic-gradient(from 0deg, transparent 0deg, hsl(158 64% 45% / 0.5) 40deg, transparent 60deg)' }} />
+                <Icon name="Radar" size={40} className="relative text-hazard-1" />
+              </div>
+              <div className="text-[11px] tracking-[0.4em] text-hazard-1">METEOROLOGICAL TEAM</div>
+              <h2 className="mt-2 font-display text-5xl font-semibold tracking-widest sm:text-6xl">S.S.M.P team</h2>
+              <div className="mt-4 text-[11px] tracking-widest text-muted-foreground">СООБЩЕСТВО МЕТЕОРОЛОГОВ-ЛЮБИТЕЛЕЙ</div>
+            </section>
+          )}
+
+          {tab === 'stats' && (
+            <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
+              <SectionTitle icon="BarChart3" title="Статистика по регионам" sub="Распределение уровней опасности" />
+              <div className="grid gap-3 sm:grid-cols-4">
+                {LEVELS.map((l) => (
+                  <div key={l} className="rounded-sm border border-border bg-card p-4" style={{ borderColor: HAZARD_META[l].color + '55' }}>
+                    <div className="font-display text-4xl font-semibold" style={{ color: HAZARD_META[l].color }}>{stats[l]}</div>
+                    <div className="mt-1 text-[10px] tracking-widest text-muted-foreground">L{l} · {HAZARD_META[l].label}</div>
                   </div>
-                  <div className="mt-2 text-sm">{m.name}</div>
-                  <div className="text-[11px] text-muted-foreground">{m.role}</div>
-                  <div className="mt-2 flex items-center gap-1 text-[10px] tracking-wider text-muted-foreground"><Icon name="MapPin" size={11} /> {m.region}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+                ))}
+              </div>
+              <div className="rounded-sm border border-border bg-card p-4">
+                <div className="mb-3 text-[11px] tracking-widest text-muted-foreground">АКТИВНОСТЬ ПО РЕГИОНАМ</div>
+                {[
+                  { r: 'Восточная Европа', v: 72 }, { r: 'Центральная Азия', v: 48 },
+                  { r: 'Южная Сибирь', v: 61 }, { r: 'Дальний Восток', v: 39 }, { r: 'Южная Азия', v: 55 },
+                ].map((x) => (
+                  <div key={x.r} className="mb-2.5">
+                    <div className="mb-1 flex justify-between text-[11px]"><span>{x.r}</span><span className="text-muted-foreground">{x.v}%</span></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-secondary"><div className="h-full bg-hazard-1" style={{ width: `${x.v}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
-        {tab === 'stats' && (
-          <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
-            <SectionTitle icon="BarChart3" title="Статистика по регионам" sub="Распределение уровней опасности" />
-            <div className="grid gap-3 sm:grid-cols-4">
-              {LEVELS.map((l) => (
-                <div key={l} className="rounded-sm border border-border bg-card p-4" style={{ borderColor: HAZARD_META[l].color + '55' }}>
-                  <div className="font-display text-4xl font-semibold" style={{ color: HAZARD_META[l].color }}>{stats[l]}</div>
-                  <div className="mt-1 text-[10px] tracking-widest text-muted-foreground">L{l} · {HAZARD_META[l].label}</div>
-                </div>
-              ))}
-            </div>
-            <div className="rounded-sm border border-border bg-card p-4">
-              <div className="mb-3 text-[11px] tracking-widest text-muted-foreground">АКТИВНОСТЬ ПО РЕГИОНАМ</div>
-              {[
-                { r: 'Восточная Европа', v: 72 }, { r: 'Центральная Азия', v: 48 },
-                { r: 'Южная Сибирь', v: 61 }, { r: 'Дальний Восток', v: 39 }, { r: 'Южная Азия', v: 55 },
-              ].map((x) => (
-                <div key={x.r} className="mb-2.5">
-                  <div className="mb-1 flex justify-between text-[11px]"><span>{x.r}</span><span className="text-muted-foreground">{x.v}%</span></div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-secondary"><div className="h-full bg-hazard-1" style={{ width: `${x.v}%` }} /></div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+          {tab === 'archive' && (
+            <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
+              <SectionTitle icon="Archive" title="Архив наблюдений" sub="История зафиксированных зон опасности" />
+              <div className="overflow-x-auto rounded-sm border border-border">
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-secondary text-[10px] tracking-widest text-muted-foreground">
+                    <tr><th className="p-2.5">ДАТА</th><th className="p-2.5">ПУНКТ</th><th className="p-2.5">УР.</th><th className="p-2.5">ЯВЛЕНИЕ</th><th className="p-2.5 text-right">СПОТЕР</th></tr>
+                  </thead>
+                  <tbody>
+                    {ARCHIVE.map((a, i) => (
+                      <tr key={i} className="border-t border-border hover:bg-secondary/40">
+                        <td className="p-2.5 text-muted-foreground">{a.date}</td>
+                        <td className="p-2.5">{a.city}</td>
+                        <td className="p-2.5"><span className="rounded-[2px] px-1.5 py-0.5 text-[10px]" style={{ background: HAZARD_META[a.lvl].color + '22', color: HAZARD_META[a.lvl].color }}>L{a.lvl}</span></td>
+                        <td className="p-2.5 text-muted-foreground">{a.event}</td>
+                        <td className="p-2.5 text-right text-hazard-1">{a.obs}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </main>
+      )}
 
-        {tab === 'archive' && (
-          <section className="animate-fade-in mx-auto max-w-4xl space-y-5">
-            <SectionTitle icon="Archive" title="Архив наблюдений" sub="История зафиксированных зон опасности" />
-            <div className="overflow-x-auto rounded-sm border border-border">
-              <table className="w-full text-left text-[12px]">
-                <thead className="bg-secondary text-[10px] tracking-widest text-muted-foreground">
-                  <tr><th className="p-2.5">ДАТА</th><th className="p-2.5">ПУНКТ</th><th className="p-2.5">УР.</th><th className="p-2.5">ЯВЛЕНИЕ</th><th className="p-2.5 text-right">СПОТЕР</th></tr>
-                </thead>
-                <tbody>
-                  {ARCHIVE.map((a, i) => (
-                    <tr key={i} className="border-t border-border hover:bg-secondary/40">
-                      <td className="p-2.5 text-muted-foreground">{a.date}</td>
-                      <td className="p-2.5">{a.city}</td>
-                      <td className="p-2.5"><span className="rounded-[2px] px-1.5 py-0.5 text-[10px]" style={{ background: HAZARD_META[a.lvl].color + '22', color: HAZARD_META[a.lvl].color }}>L{a.lvl}</span></td>
-                      <td className="p-2.5 text-muted-foreground">{a.event}</td>
-                      <td className="p-2.5 text-right text-hazard-1">{a.obs}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-      </main>
-
-      <footer className="mx-auto max-w-[1500px] border-t border-border px-4 py-4 text-[10px] tracking-widest text-muted-foreground">
-        METEO·WATCH © 2026 · СООБЩЕСТВО МЕТЕОРОЛОГОВ-ЛЮБИТЕЛЕЙ · НЕ ЯВЛЯЕТСЯ ОФИЦИАЛЬНЫМ ИСТОЧНИКОМ ПРОГНОЗОВ
+      <footer className="mx-auto max-w-[1900px] border-t border-border px-4 py-4 text-[10px] tracking-widest text-muted-foreground">
+        S.S.M.P team © 2026 · СООБЩЕСТВО МЕТЕОРОЛОГОВ-ЛЮБИТЕЛЕЙ · НЕ ЯВЛЯЕТСЯ ОФИЦИАЛЬНЫМ ИСТОЧНИКОМ ПРОГНОЗОВ
       </footer>
     </div>
   );
